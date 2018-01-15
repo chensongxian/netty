@@ -1,5 +1,7 @@
 package com.csx.echo;
 
+import io.netty.channel.ChannelInboundHandlerAdapter;
+
 /**
  * Created with IntelliJ IDEA.
  *
@@ -7,6 +9,6 @@ package com.csx.echo;
  * @Author: csx
  * @Date: 2018/01/15
  */
-public class EchoServerHandler {
+public class EchoServerHandler extends ChannelInboundHandlerAdapter{
 
 }
