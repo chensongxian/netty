@@ -10,6 +10,8 @@ import java.nio.ByteBuffer;
 import java.nio.channels.*;
 import java.util.Iterator;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * Created with IntelliJ IDEA.
@@ -50,6 +52,7 @@ public class MultiplexerTimeServer implements Runnable {
         this.stop = true;
     }
 
+    @Override
     public void run() {
         while (!stop) {
             try {
@@ -60,11 +63,19 @@ public class MultiplexerTimeServer implements Runnable {
                 while (it.hasNext()) {
                     key = it.next();
                     it.remove();
+                    handInput(key);
                 }
             } catch (IOException e) {
                 e.printStackTrace();
             }
 
+        }
+        if(selector!=null){
+            try {
+                selector.close();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
         }
     }
 
@@ -75,6 +86,7 @@ public class MultiplexerTimeServer implements Runnable {
                 this.accept(key);
             }
             if (key.isReadable()) {
+                System.out.println("读取-------");
                 this.read(key);
                 this.write((SocketChannel) key.channel(),"测试");
             }
@@ -128,6 +140,12 @@ public class MultiplexerTimeServer implements Runnable {
         sc.configureBlocking(false);
         //4 注册到多路复用器上，并设置读取标识
         sc.register(this.selector, SelectionKey.OP_READ);
+    }
+
+    public static void main(String[] args) {
+        MultiplexerTimeServer server=new MultiplexerTimeServer(8763);
+        ExecutorService executor = Executors.newFixedThreadPool(4);
+        executor.execute(server);
     }
 
 }
