@@ -1,20 +1,15 @@
 package com.csx.nio;
 
-import com.sun.deploy.panel.SecurityLevel;
-import com.sun.org.apache.regexp.internal.RE;
-import org.omg.PortableServer.REQUEST_PROCESSING_POLICY_ID;
-
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
-import java.nio.channels.ClosedChannelException;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.SocketChannel;
+import java.nio.channels.WritableByteChannel;
 import java.util.Iterator;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.logging.Level;
 
 /**
  * Created with IntelliJ IDEA.
@@ -23,32 +18,33 @@ import java.util.logging.Level;
  * @Author: csx
  * @Date: 2018/01/15
  */
-public class TimeClientHandle implements Runnable{
-   private String host;
-   private int port;
-   private Selector selector;
-   private SocketChannel socketChannel;
-   private ByteBuffer readBuffer=ByteBuffer.allocate(1024);
+public class TimeClientHandle implements Runnable {
+    private String host;
+    private int port;
+    private Selector selector;
+    private SocketChannel socketChannel;
+    private ByteBuffer readBuffer = ByteBuffer.allocate(1024);
 
-   private volatile boolean stop=false;
+    private volatile boolean stop = false;
 
     public TimeClientHandle(String host, int port) {
 
         try {
-            this.host = host==null?"127.0.0.1":host;
+            this.host = host == null ? "127.0.0.1" : host;
             this.port = port;
-            selector=Selector.open();
-            socketChannel=SocketChannel.open();
+            selector = Selector.open();
+            socketChannel = SocketChannel.open();
             socketChannel.configureBlocking(false);
         } catch (IOException e) {
             e.printStackTrace();
+            System.exit(1);
         }
 
     }
 
 
-    public void stop(){
-        this.stop=true;
+    public void stop() {
+        this.stop = true;
     }
 
     @Override
@@ -57,21 +53,34 @@ public class TimeClientHandle implements Runnable{
             doConnect();
         } catch (IOException e) {
             e.printStackTrace();
+            System.exit(1);
         }
-        while (!stop){
+        while (!stop) {
             try {
                 selector.select(1000);
                 Iterator<SelectionKey> keyIterator = selector.selectedKeys().iterator();
-                while (keyIterator.hasNext()){
-                    SelectionKey key = keyIterator.next();
+                SelectionKey key = null;
+                while (keyIterator.hasNext()) {
+                    key = keyIterator.next();
                     keyIterator.remove();
-                    handleInput(key);
+                    try {
+                        handleInput(key);
+                    }catch (Exception e){
+                        if(key!=null){
+                            key.cancel();
+                            if(key.channel()!=null){
+                                key.channel().close();
+                            }
+                        }
+                    }
                 }
-            } catch (IOException e) {
+            } catch (Exception e) {
                 e.printStackTrace();
+                System.exit(1);
             }
         }
-        if(selector!=null){
+        // // 多路复用器关闭后，所有注册在上面的Channel和Pipe等资源都会被自动去注册并关闭，所以不需要重复释放资源
+        if (selector != null) {
             try {
                 selector.close();
             } catch (IOException e) {
@@ -82,60 +91,53 @@ public class TimeClientHandle implements Runnable{
     }
 
     private void handleInput(SelectionKey key) throws IOException {
-        if(key.isValid()){
-            SocketChannel sc= (SocketChannel) key.channel();
-            if(key.isConnectable()){
-                if(sc.finishConnect()){
-                    sc.register(selector,SelectionKey.OP_READ);
+        if (key.isValid()) {
+            SocketChannel sc = (SocketChannel) key.channel();
+            if (key.isConnectable()) {
+                if (sc.finishConnect()) {
+                    sc.register(selector, SelectionKey.OP_READ);
                     doWrite(sc);
-                }else{
-                    System.exit(-1);
+                } else {
+                    System.exit(1);
                 }
             }
-            if(key.isReadable()){
+            if (key.isReadable()) {
                 this.readBuffer.clear();
-                int count=sc.read(readBuffer);
-                if(count==-1){
-                    sc.close();
+                int count = sc.read(readBuffer);
+                if (count == -1) {
                     key.cancel();
+                    sc.close();
                     return;
                 }
                 this.readBuffer.flip();
-                byte[] bytes=new byte[this.readBuffer.remaining()];
+                byte[] bytes = new byte[this.readBuffer.remaining()];
                 this.readBuffer.get(bytes);
-                String body=new String(bytes,"utf-8");
-                System.out.println("body:"+body);
+                String body = new String(bytes, "UTF-8");
+                System.out.println("Now is :" + body);
                 stop();
             }
         }
     }
 
 
-
     private void doConnect() throws IOException {
-        if(socketChannel.connect(new InetSocketAddress(host,port))){
+        if (socketChannel.connect(new InetSocketAddress(host, port))) {
             socketChannel.register(selector, SelectionKey.OP_READ);
             doWrite(socketChannel);
-        }else{
-            socketChannel.register(selector,SelectionKey.OP_CONNECT);
+        } else {
+            socketChannel.register(selector, SelectionKey.OP_CONNECT);
         }
     }
 
     private void doWrite(SocketChannel socketChannel) throws IOException {
-        byte[] req="query time order".getBytes();
-        ByteBuffer byteBuffer=ByteBuffer.allocate(req.length);
-
-        byteBuffer.flip();
-        socketChannel.write(byteBuffer);
-        if(!byteBuffer.hasRemaining()){
+        byte[] req = "query time order".getBytes();
+        ByteBuffer writeBuffer = ByteBuffer.allocate(req.length);
+        writeBuffer.put(req);
+        writeBuffer.flip();
+        socketChannel.write(writeBuffer);
+        if (!writeBuffer.hasRemaining()) {
             System.out.println("send order 2 server success!");
         }
     }
 
-    public static void main(String[] args) {
-        TimeClientHandle clientHandle=new TimeClientHandle("127.0.0.1",8763);
-        ExecutorService executor = Executors.newFixedThreadPool(4);
-        executor.execute(clientHandle);
-
-    }
 }

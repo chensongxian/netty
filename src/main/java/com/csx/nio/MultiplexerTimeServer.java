@@ -63,13 +63,23 @@ public class MultiplexerTimeServer implements Runnable {
                 while (it.hasNext()) {
                     key = it.next();
                     it.remove();
-                    handInput(key);
+                    try {
+                        handInput(key);
+                    }catch (Exception e){
+                        if(key!=null){
+                            key.cancel();
+                            if(key.channel()!=null){
+                                key.channel().close();
+                            }
+                        }
+                    }
                 }
-            } catch (IOException e) {
-                e.printStackTrace();
+            } catch (Throwable t) {
+                t.printStackTrace();
             }
 
         }
+        //路复用器关闭后，所有注册在上面的Channel和Pipe等资源都会被自动去注册并关闭，所以不需要重复释放资源
         if(selector!=null){
             try {
                 selector.close();
@@ -86,9 +96,7 @@ public class MultiplexerTimeServer implements Runnable {
                 this.accept(key);
             }
             if (key.isReadable()) {
-                System.out.println("读取-------");
                 this.read(key);
-                this.write((SocketChannel) key.channel(),"测试");
             }
         }
     }
@@ -103,8 +111,8 @@ public class MultiplexerTimeServer implements Runnable {
             int count = sc.read(this.readBuffer);
             //4 如果没有数据
             if (count == -1) {
-                key.channel().close();
                 key.cancel();
+                sc.close();
                 return;
             }
             //5 有数据则进行读取 读取之前需要进行复位方法(把position 和limit进行复位)
@@ -114,8 +122,15 @@ public class MultiplexerTimeServer implements Runnable {
             //7 接收缓冲区数据
             this.readBuffer.get(bytes);
             //8 打印结果
-            String body = new String(bytes).trim();
-            System.out.println("Server : " + body);
+            String body = new String(bytes,"UTF-8").trim();
+            System.out.println("The time server receive order : "
+                    + body);
+
+            String currentTime = "QUERY TIME ORDER"
+                    .equalsIgnoreCase(body) ? new java.util.Date(
+                    System.currentTimeMillis()).toString()
+                    : "BAD ORDER";
+            this.write(sc,currentTime);
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -140,12 +155,6 @@ public class MultiplexerTimeServer implements Runnable {
         sc.configureBlocking(false);
         //4 注册到多路复用器上，并设置读取标识
         sc.register(this.selector, SelectionKey.OP_READ);
-    }
-
-    public static void main(String[] args) {
-        MultiplexerTimeServer server=new MultiplexerTimeServer(8763);
-        ExecutorService executor = Executors.newFixedThreadPool(4);
-        executor.execute(server);
     }
 
 }
