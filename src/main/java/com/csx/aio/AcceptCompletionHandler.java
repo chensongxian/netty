@@ -1,0 +1,29 @@
+package com.csx.aio;
+
+import java.nio.ByteBuffer;
+import java.nio.channels.AsynchronousServerSocketChannel;
+import java.nio.channels.AsynchronousSocketChannel;
+import java.nio.channels.CompletionHandler;
+
+/**
+ * Created with IntelliJ IDEA.
+ *
+ * @Description: TODO
+ * @Author: csx
+ * @Date: 2018/01/18
+ */
+public class AcceptCompletionHandler implements CompletionHandler<AsynchronousSocketChannel,AsyncTimeServerHandler>{
+
+    @Override
+    public void completed(AsynchronousSocketChannel result, AsyncTimeServerHandler attachment) {
+        attachment.server.accept(attachment,this);
+        ByteBuffer buffer=ByteBuffer.allocate(1024);
+        result.read(buffer,buffer,new ReadCompletionHandler(result));
+    }
+
+    @Override
+    public void failed(Throwable exc, AsyncTimeServerHandler attachment) {
+        exc.printStackTrace();
+        attachment.latch.countDown();
+    }
+}
